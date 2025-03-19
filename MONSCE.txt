@@ -1,0 +1,431 @@
+-- Blox Fruits Auto Farm Script - MONSCE
+-- Created by Nguyễn Hoài Linh
+
+-- Initialize UI Library
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+
+-- Variables
+local player = game:GetService("Players").LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local runService = game:GetService("RunService")
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local virtualUser = game:GetService("VirtualUser")
+
+-- Settings
+local settings = {
+    autoFarm = false,
+    selectedMob = "Bandit",
+    autoStats = false,
+    statToLevel = "Melee",
+    autoRaid = false,
+    autoCollectChest = false,
+    autoEquipWeapon = false,
+    selectedWeapon = "",
+    farmDistance = 5,
+    autoRejoin = true,
+    autoServerHop = false
+}
+
+-- Anti-AFK
+player.Idled:Connect(function()
+    virtualUser:CaptureController()
+    virtualUser:ClickButton2(Vector2.new())
+end)
+
+-- Welcome notification
+local WelcomeWindow = OrionLib:MakeWindow({
+    Name = "SCRIPT MONSCE",
+    HidePremium = true,
+    SaveConfig = false,
+    IntroEnabled = true,
+    IntroText = "SCRIPT MONSCE đã được CHẠY",
+    IntroIcon = "rbxassetid://4483345998"
+})
+
+local WelcomeTab = WelcomeWindow:MakeTab({
+    Name = "Welcome",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+WelcomeTab:AddLabel("ADMIN: Nguyễn Hoài Linh")
+WelcomeTab:AddLabel("Vui lòng đăng nhập để tiếp tục")
+
+local passwordInput = ""
+WelcomeTab:AddTextbox({
+    Name = "Mật khẩu",
+    Default = "",
+    TextDisappear = true,
+    Callback = function(Value)
+        passwordInput = Value
+    end	  
+})
+
+WelcomeTab:AddButton({
+    Name = "Đăng nhập",
+    Callback = function()
+        -- Simple password check (in a real script, you'd want better security)
+        if passwordInput == "monsce123" then -- Example password
+            OrionLib:MakeNotification({
+                Name = "MONSCE SCRIPT",
+                Content = "Chúc mừng bạn đã Chạy script MONSCE",
+                Image = "rbxassetid://4483345998",
+                Time = 5
+            })
+            
+            -- Close welcome window
+            OrionLib:Destroy()
+            
+            -- Initialize main script after successful login
+            initializeMainScript()
+        else
+            OrionLib:MakeNotification({
+                Name = "MONSCE SCRIPT",
+                Content = "Mật khẩu không chính xác!",
+                Image = "rbxassetid://4483345998",
+                Time = 5
+            })
+        end
+    end    
+})
+
+-- Function to get all weapons
+local function getWeapons()
+    local weapons = {}
+    for _, tool in pairs(player.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            table.insert(weapons, tool.Name)
+        end
+    end
+    for _, tool in pairs(character:GetChildren()) do
+        if tool:IsA("Tool") then
+            table.insert(weapons, tool.Name)
+        end
+    end
+    return weapons
+end
+
+-- Function to equip weapon
+local function equipWeapon(weaponName)
+    if player.Backpack:FindFirstChild(weaponName) then
+        local weapon = player.Backpack:FindFirstChild(weaponName)
+        character.Humanoid:EquipTool(weapon)
+        return true
+    end
+    return false
+end
+
+-- Function to get closest mob
+local function getClosestMob()
+    local closest = nil
+    local maxDistance = math.huge
+    
+    for _, mob in pairs(workspace.Enemies:GetChildren()) do
+        if mob:FindFirstChild("Humanoid") and mob:FindFirstChild("HumanoidRootPart") and mob.Humanoid.Health > 0 and mob.Name:find(settings.selectedMob) then
+            local distance = (hrp.Position - mob.HumanoidRootPart.Position).Magnitude
+            if distance < maxDistance then
+                maxDistance = distance
+                closest = mob
+            end
+        end
+    end
+    
+    return closest
+end
+
+-- Function to get all mobs
+local function getMobs()
+    local mobs = {}
+    local addedNames = {}
+    
+    for _, mob in pairs(workspace.Enemies:GetChildren()) do
+        if mob:FindFirstChild("Humanoid") and not addedNames[mob.Name] then
+            table.insert(mobs, mob.Name)
+            addedNames[mob.Name] = true
+        end
+    end
+    
+    return mobs
+end
+
+-- Function to collect nearby chests
+local function collectChests()
+    for _, chest in pairs(workspace:GetChildren()) do
+        if chest.Name:find("Chest") and chest:FindFirstChild("Interaction") then
+            local distance = (hrp.Position - chest.Position).Magnitude
+            if distance < 50 then
+                hrp.CFrame = chest.CFrame
+                wait(1)
+                fireproximityprompt(chest.Interaction)
+            end
+        end
+    end
+end
+
+-- Function to upgrade stats
+local function upgradeStats()
+    local args = {
+        [1] = "AddPoint",
+        [2] = settings.statToLevel,
+        [3] = 1
+    }
+    
+    replicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
+end
+
+-- Auto Farm Function
+local function autoFarm()
+    while settings.autoFarm do
+        local mob = getClosestMob()
+        
+        if mob and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+            if settings.autoEquipWeapon and settings.selectedWeapon ~= "" then
+                equipWeapon(settings.selectedWeapon)
+            end
+            
+            -- Teleport behind the mob
+            hrp.CFrame = mob.HumanoidRootPart.CFrame * CFrame.new(0, 0, settings.farmDistance)
+            
+            -- Attack
+            if character:FindFirstChildOfClass("Tool") then
+                local tool = character:FindFirstChildOfClass("Tool")
+                tool:Activate()
+            end
+        else
+            -- Look for mobs in other areas
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v.Name == "SpawnPoint" and v:IsA("Part") then
+                    hrp.CFrame = v.CFrame
+                    wait(2)
+                    break
+                end
+            end
+        end
+        
+        wait(0.1)
+    end
+end
+
+-- Auto Raid Function
+local function autoRaid()
+    while settings.autoRaid do
+        -- Logic for auto raid
+        -- This would involve finding raid islands, joining raids, etc.
+        
+        wait(1)
+    end
+end
+
+-- Initialize the main script after successful login
+function initializeMainScript()
+    local Window = OrionLib:MakeWindow({
+        Name = "MONSCE - Blox Fruits Auto Farm", 
+        HidePremium = false, 
+        SaveConfig = true, 
+        ConfigFolder = "MONSCEConfig"
+    })
+
+    -- Main Tab
+    local MainTab = Window:MakeTab({
+        Name = "Main",
+        Icon = "rbxassetid://4483345998",
+        PremiumOnly = false
+    })
+
+    -- Farm Section
+    local FarmSection = MainTab:AddSection({
+        Name = "Farming"
+    })
+
+    -- Get mobs for dropdown
+    local mobList = getMobs()
+    if #mobList == 0 then
+        table.insert(mobList, "Bandit")
+    end
+
+    FarmSection:AddDropdown({
+        Name = "Select Mob",
+        Default = mobList[1],
+        Options = mobList,
+        Callback = function(Value)
+            settings.selectedMob = Value
+        end    
+    })
+
+    FarmSection:AddSlider({
+        Name = "Farm Distance",
+        Min = 3,
+        Max = 10,
+        Default = 5,
+        Color = Color3.fromRGB(255, 255, 255),
+        Increment = 1,
+        ValueName = "studs",
+        Callback = function(Value)
+            settings.farmDistance = Value
+        end    
+    })
+
+    FarmSection:AddToggle({
+        Name = "Auto Farm",
+        Default = false,
+        Callback = function(Value)
+            settings.autoFarm = Value
+            if Value then
+                autoFarm()
+            end
+        end    
+    })
+
+    -- Weapons Section
+    local WeaponSection = MainTab:AddSection({
+        Name = "Weapons"
+    })
+
+    local weaponsList = getWeapons()
+    if #weaponsList == 0 then
+        table.insert(weaponsList, "None")
+    end
+
+    WeaponSection:AddDropdown({
+        Name = "Select Weapon",
+        Default = weaponsList[1],
+        Options = weaponsList,
+        Callback = function(Value)
+            settings.selectedWeapon = Value
+        end    
+    })
+
+    WeaponSection:AddToggle({
+        Name = "Auto Equip Weapon",
+        Default = false,
+        Callback = function(Value)
+            settings.autoEquipWeapon = Value
+        end    
+    })
+
+    WeaponSection:AddButton({
+        Name = "Refresh Weapons",
+        Callback = function()
+            local newWeapons = getWeapons()
+            -- This would need to update the dropdown, which isn't directly possible with Orion
+            -- In a real implementation, you'd need to recreate the dropdown
+            OrionLib:MakeNotification({
+                Name = "MONSCE SCRIPT",
+                Content = "Đã làm mới danh sách vũ khí!",
+                Image = "rbxassetid://4483345998",
+                Time = 3
+            })
+        end    
+    })
+
+    -- Stats Tab
+    local StatsTab = Window:MakeTab({
+        Name = "Stats",
+        Icon = "rbxassetid://4483345998",
+        PremiumOnly = false
+    })
+
+    StatsTab:AddDropdown({
+        Name = "Stat to Level",
+        Default = "Melee",
+        Options = {"Melee", "Defense", "Sword", "Gun", "Blox Fruit"},
+        Callback = function(Value)
+            settings.statToLevel = Value
+        end    
+    })
+
+    StatsTab:AddToggle({
+        Name = "Auto Stats",
+        Default = false,
+        Callback = function(Value)
+            settings.autoStats = Value
+            
+            while settings.autoStats do
+                upgradeStats()
+                wait(1)
+            end
+        end    
+    })
+
+    -- Misc Tab
+    local MiscTab = Window:MakeTab({
+        Name = "Misc",
+        Icon = "rbxassetid://4483345998",
+        PremiumOnly = false
+    })
+
+    MiscTab:AddToggle({
+        Name = "Auto Collect Chests",
+        Default = false,
+        Callback = function(Value)
+            settings.autoCollectChest = Value
+            
+            while settings.autoCollectChest do
+                collectChests()
+                wait(5)
+            end
+        end    
+    })
+
+    MiscTab:AddToggle({
+        Name = "Auto Raid",
+        Default = false,
+        Callback = function(Value)
+            settings.autoRaid = Value
+            if Value then
+                autoRaid()
+            end
+        end    
+    })
+
+    MiscTab:AddToggle({
+        Name = "Auto Rejoin",
+        Default = true,
+        Callback = function(Value)
+            settings.autoRejoin = Value
+        end    
+    })
+
+    MiscTab:AddToggle({
+        Name = "Auto Server Hop",
+        Default = false,
+        Callback = function(Value)
+            settings.autoServerHop = Value
+            
+            if Value then
+                -- Server hop logic would go here
+            end
+        end    
+    })
+
+    -- Credits Tab
+    local CreditsTab = Window:MakeTab({
+        Name = "Credits",
+        Icon = "rbxassetid://4483345998",
+        PremiumOnly = false
+    })
+
+    CreditsTab:AddLabel("Script MONSCE by Nguyễn Hoài Linh")
+    CreditsTab:AddLabel("Version: 1.0.0")
+    CreditsTab:AddLabel("Thanks for using MONSCE Script!")
+
+    -- Auto rejoin on kick
+    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+        if child.Name == 'ErrorPrompt' and settings.autoRejoin then
+            game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+        end
+    end)
+
+    -- Cleanup
+    game:GetService("Players").PlayerRemoving:Connect(function(plr)
+        if plr == player then
+            OrionLib:Destroy()
+        end
+    end)
+end
+
+-- Initialize the welcome UI
+OrionLib:Init()
